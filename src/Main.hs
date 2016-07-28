@@ -4,7 +4,8 @@ module Main where
 import Control.Monad (void)
 import Text.Megaparsec
 import Text.Megaparsec.Expr
-import Text.Megaparsec.String -- input stream is of type ‘String’
+import Text.Megaparsec.String 
+import qualified Data.Text as T
 import qualified Text.Megaparsec.Lexer as L
 
 -- Boolean - For added Boolean Blindness
@@ -38,6 +39,7 @@ data ABinOp = Add
 -- Statements
 data Stmt = Seq [Stmt]
           | Assign String AExpr
+          | Declare String AExpr
           | If BExpr Stmt Stmt
           | While BExpr Stmt
           | Skip
@@ -71,7 +73,7 @@ rword w = string w *> notFollowedBy alphaNumChar *> sc
 
 -- Reserved words
 rws :: [String]
-rws = ["if","then","else","while","do","skip","true","false","not","and","or"]
+rws = ["if","then","else","while","do","skip","true","false","not","and","or", "var"]
 
 identifier :: Parser String
 identifier = lexeme (p >>= check)
@@ -91,7 +93,7 @@ stmt :: Parser Stmt
 stmt = parens stmt <|> stmtSeq
 
 stmt' :: Parser Stmt
-stmt' = ifStmt <|> whileStmt <|> skipStmt <|> assignStmt
+stmt' = ifStmt <|> whileStmt <|> skipStmt <|> declareStmt <|> assignStmt
 
 stmtSeq :: Parser Stmt
 stmtSeq = f <$> sepBy1 stmt' semi
@@ -119,9 +121,19 @@ whileStmt = do
 assignStmt :: Parser Stmt
 assignStmt = do
   var <- identifier
-  void $ symbol ":="
+  void $ symbol "<-"
   expr <- aExpr
   return $ Assign var expr
+
+declareStmt :: Parser Stmt
+declareStmt = do
+  rword "var"
+  var <- identifier
+  void $ symbol "<-"
+  expr <- aExpr
+  return $ Declare var expr
+
+
 
 skipStmt :: Parser Stmt
 skipStmt = Skip <$ rword "skip"
@@ -171,6 +183,65 @@ relation :: Parser RBinOp
 relation =  (symbol ">" *> pure Greater)
         <|> (symbol "<" *> pure Less)
 
+-- Code Generation Boys
+
+type Code = String
+
+
+
+
+
+
+
+-- AExpr = Var String
+--            | IntConst Integer
+--            | Neg AExpr
+--            | ABinary ABinOp AExpr AExpr
+-- 
+-- ABinOp = Add
+--             | Subtract
+--             | Multiply--             | Divide
+
+generateA (Var s) = "MOV R0 " ++ s -- TODO
+generateA (IntConst int) = "MOV R0 " ++ show int
+-- generateA (Negate ----)  TODO
+generateA (ABinary Add a b) = unlines [";;Add"
+                                       ,generateA a
+                                       ,"MOV A R0"
+                                       ,generateA b
+                                       ,"ADD A R0"
+                                       ,"MOV R0 A"]
+generateA x = show x
+
+-- Stmt = Seq [Stmt]
+--           | Assign String AExpr
+--           | If BExpr Stmt Stmt
+--           | While BExpr Stmt
+--           | Skip
+
+generate (Seq stmts) = unlines $ map generate stmts
+generate Skip = "NOP"
+generate (Assign str expr) = generateA expr -- TODO
+generate (Declare str expr) = generateA expr -- TODO
+
+generate other = show other
+
+
+
+
+
+
+
+
+
+
 main = do
   f <- getContents
-  parseTest whileParser f
+--  putStrLn "Parse:"
+  case parse whileParser "" f of
+    Left err -> print err
+    Right ast -> do
+--      print ast
+--      putStrLn ""
+--      putStrLn "OUT:"
+      putStrLn $ generate ast
