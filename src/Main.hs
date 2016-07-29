@@ -11,6 +11,10 @@ import qualified Data.Map as M
 import qualified Control.Monad.State.Lazy as S
 import Control.Monad.State.Lazy (get,put)
 
+-- FIFTY ONE: A simple language for a simple microcontroller
+
+-- PARSING EXPRESSION TREE -----------------------------
+
 -- Boolean - For added Boolean Blindness
 data BExpr = BoolConst Bool
            | Not BExpr
