@@ -7,6 +7,9 @@ import Text.Megaparsec.Expr
 import Text.Megaparsec.String 
 import qualified Data.Text as T
 import qualified Text.Megaparsec.Lexer as L
+import qualified Data.Map as M
+import qualified Control.Monad.State.Lazy as S
+import Control.Monad.State.Lazy (get,put)
 
 -- Boolean - For added Boolean Blindness
 data BExpr = BoolConst Bool
@@ -27,14 +30,24 @@ data AExpr = Var String
            | IntConst Integer
            | Neg AExpr
            | ABinary ABinOp AExpr AExpr
-      deriving (Show)
+
+instance Show AExpr where
+  show (Var s) = s
+  show (IntConst i) = show i
+  show (Neg a) = "-" ++ show a 
+  show (ABinary abinop a1 a2) = unwords [show a1, show abinop, show a2]
 
 -- Arithmetic operators
 data ABinOp = Add
             | Subtract
             | Multiply
             | Divide
-      deriving (Show)
+
+instance Show ABinOp where
+  show Add = "+"
+  show Subtract = "-"
+  show Multiply = "*"
+  show Divide = "/"
 
 -- Statements
 data Stmt = Seq [Stmt]
@@ -187,11 +200,14 @@ relation =  (symbol ">" *> pure Greater)
 
 type Code = String
 
-
-
-
-
-
+lookupReg :: String -> S.State (M.Map String Int) Int
+lookupReg var = do
+  m <- get
+  case M.lookup var m of
+    Just pos -> return pos
+    Nothing -> do
+                  put $ M.insert var (M.size m) m
+                  return $ M.size m
 
 -- AExpr = Var String
 --            | IntConst Integer
@@ -202,36 +218,46 @@ type Code = String
 --             | Subtract
 --             | Multiply--             | Divide
 
-generateA (Var s) = "MOV R0 " ++ s -- TODO
-generateA (IntConst int) = "MOV R0 " ++ show int
+
+generateA (Var s) = do
+                      reg <- lookupReg s
+                      return $ unlines ["MOV R1, " ++ show reg
+                                       ,"MOV R0, @R1"]
+
+generateA (IntConst int) = return $ "MOV R0, #" ++ show int
 -- generateA (Negate ----)  TODO
-generateA (ABinary Add a b) = unlines [";;Add"
-                                       ,generateA a
-                                       ,"MOV A R0"
-                                       ,generateA b
-                                       ,"ADD A R0"
-                                       ,"MOV R0 A"]
-generateA x = show x
+generateA (ABinary Add a b) = do 
+                                t1 <- generateA a
+                                t2 <- generateA b
+                                return $ unlines [
+                                        t1 -- Result is in R0
+                                       ,"MOV A, R0" -- t1 is now in A
+                                       ,t2 -- t2 is now in R0
+                                       ,"ADD A, R0" -- Add t1 and t2
+                                       ,"MOV R0, A"] -- Store result in R0
+generateA x = return $ show x
 
 -- Stmt = Seq [Stmt]
 --           | Assign String AExpr
 --           | If BExpr Stmt Stmt
 --           | While BExpr Stmt
 --           | Skip
+generate :: Stmt -> S.State (M.Map String Int) String
+generate (Seq stmts) = unlines <$> mapM generate stmts
+generate Skip = return $ "NOP"
+generate e@(Assign str expr) = do
+  reg <- lookupReg str
+  t1 <- generateA expr
+  return $ unlines [";; " ++ show e
+                   ,"MOV R1, #" ++ show reg
+                   ,t1 -- generate expression and store result in R0
+                   ,"MOV @R1, R0"]
+generate (Declare str expr) = generate (Assign str expr) -- same as above for now
 
-generate (Seq stmts) = unlines $ map generate stmts
-generate Skip = "NOP"
-generate (Assign str expr) = generateA expr -- TODO
-generate (Declare str expr) = generateA expr -- TODO
-
-generate other = show other
+generate other = return $ show other
 
 
-
-
-
-
-
+generateMain ast = S.evalState (generate ast) $ M.empty
 
 
 
@@ -244,4 +270,4 @@ main = do
 --      print ast
 --      putStrLn ""
 --      putStrLn "OUT:"
-      putStrLn $ generate ast
+      putStrLn $ generateMain ast

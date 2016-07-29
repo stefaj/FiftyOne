@@ -2,3 +2,4 @@ cabal.sandbox.config
 build/
 dist/
 .cabal-sandbox/
+*.swp
