@@ -381,7 +381,7 @@ generate e@(While bexpr stmt) = do
 
 
 
-generate other = return $ show other
+generate other = error "Not yet implemented"
 
 
 generateMain ast = S.evalState (generate ast) $ StateData (M.empty, 0)
