@@ -10,6 +10,7 @@ import qualified Text.Megaparsec.Lexer as L
 import qualified Data.Map as M
 import qualified Control.Monad.State.Lazy as S
 import Control.Monad.State.Lazy (get,put)
+import Data.List (intercalate)
 
 -- FIFTY ONE: A simple language for a simple microcontroller
 
@@ -20,14 +21,25 @@ data BExpr = BoolConst Bool
            | Not BExpr
            | BBinary BBinOp BExpr BExpr
            | RBinary RBinOp AExpr AExpr
-     deriving (Show)
 
 -- Binary operators
 data BBinOp = And | Or
-     deriving (Show)
 
 data RBinOp = Greater | Less
-     deriving (Show)
+
+instance Show RBinOp where
+  show Greater = ">"
+  show Less = "<"
+
+instance Show BBinOp where
+  show And = "and"
+  show Or = "or"
+
+instance Show BExpr where
+  show (BoolConst b) = show b
+  show (Not b) = "not"
+  show (BBinary binop expr1 expr2) = unwords [show expr1, show binop, show expr2]
+  show (RBinary binop expr1 expr2) = unwords [show expr1, show binop, show expr2]
 
 -- Arithmetic
 data AExpr = Var String
@@ -60,7 +72,13 @@ data Stmt = Seq [Stmt]
           | If BExpr Stmt Stmt
           | While BExpr Stmt
           | Skip
-      deriving (Show)
+
+instance Show Stmt where
+  show Skip = "Skip"
+  show (While bexpr stmt) = "While " ++ show bexpr ++ " do " ++ show stmt ++ " end"
+  show (If bexpr stmt1 stmt2) = "If " ++ show bexpr ++ " then " ++ show stmt1 ++ " else " ++ show stmt2 ++ " end"
+  show (Assign var expr) = var ++ " <- " ++ show expr
+  show (Seq stmts) = "(" ++ (intercalate "; " $ map show stmts) ++ ")"
 
 -- LEXING BOYS ----------------------------------------------------------------------
 -- Space consumer
