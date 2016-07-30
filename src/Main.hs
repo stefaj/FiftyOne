@@ -75,10 +75,11 @@ data Stmt = Seq [Stmt]
 
 instance Show Stmt where
   show Skip = "Skip"
-  show (While bexpr stmt) = "While " ++ show bexpr ++ " do " ++ show stmt ++ " end"
-  show (If bexpr stmt1 stmt2) = "If " ++ show bexpr ++ " then " ++ show stmt1 ++ " else " ++ show stmt2 ++ " end"
-  show (Assign var expr) = var ++ " <- " ++ show expr
-  show (Seq stmts) = "(" ++ (intercalate "; " $ map show stmts) ++ ")"
+  show (While bexpr stmt) = unwords ["While ", show bexpr, " do ", show stmt, " end"]
+  show (If bexpr stmt1 stmt2) = unwords ["If ", show bexpr, " then ", show stmt1
+                                        , " else ", show stmt2, " end"]
+  show (Assign var expr) = unwords [var, " <- ", show expr]
+  show (Seq stmts) = unwords ["(", intercalate "; " $ map show stmts, ")"]
 
 -- LEXING BOYS ----------------------------------------------------------------------
 -- Space consumer
