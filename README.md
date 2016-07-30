@@ -8,7 +8,7 @@ varName <- value;
 ```
 
 A variable is created with the given name if it does not already exist,
-otherwise its value is updated.
+otherwise its value is updated. This means that all variables are *global*.
 A variable name starts with a letter and afterwards may contain number of alphabetic
 characters
 
