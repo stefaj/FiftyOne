@@ -90,7 +90,7 @@ rword w = string w *> notFollowedBy alphaNumChar *> sc
 
 -- Reserved words
 rws :: [String]
-rws = ["if","then","else","while","do","skip","true","false","not","and","or", "var"]
+rws = ["if","then","else","while","do","skip","true","false","not","and","or", "var", "end"]
 
 identifier :: Parser String
 identifier = lexeme (p >>= check)
@@ -125,6 +125,7 @@ ifStmt = do
   stmt1 <- stmt
   rword "else"
   stmt2 <- stmt
+  rword "end"
   return $ If cond stmt1 stmt2
 
 whileStmt :: Parser Stmt
@@ -133,6 +134,7 @@ whileStmt = do
   cond <- bExpr
   rword "do"
   stmt1 <- stmt
+  rword "end"
   return $ While cond stmt1
 
 assignStmt :: Parser Stmt
@@ -204,14 +206,24 @@ relation =  (symbol ">" *> pure Greater)
 
 type Code = String
 
-lookupReg :: String -> S.State (M.Map String Int) Int
+type VarAddr = M.Map String Int
+type BranchInd = Int
+newtype StateData = StateData (VarAddr,BranchInd)
+
+lookupReg :: String -> S.State StateData Int
 lookupReg var = do
-  m <- get
+  StateData (m, bind) <- get
   case M.lookup var m of
     Just pos -> return pos
     Nothing -> do
-                  put $ M.insert var (M.size m) m
+                  put $ StateData $ (M.insert var (M.size m) m, bind)
                   return $ M.size m
+
+getBranchId :: S.State StateData Int
+getBranchId = do
+  StateData (m, bind) <- get
+  put $ StateData (m, bind+1)
+  return bind
 
 -- AExpr = Var String
 --            | IntConst Integer
@@ -222,7 +234,7 @@ lookupReg var = do
 --             | Subtract
 --             | Multiply--             | Divide
 
-
+-- Stores result in R0
 generateA (Var s) = do
                       reg <- lookupReg s
                       return $ unlines ["MOV R1, " ++ show reg
@@ -241,12 +253,70 @@ generateA (ABinary Add a b) = do
                                        ,"MOV R0, A"] -- Store result in R0
 generateA x = return $ show x
 
+
+-- BOOLEAN BINARY THINGS
+-- BExpr = BoolConst Bool
+--            | Not BExpr
+--            | BBinary BBinOp BExpr BExpr
+--            | RBinary RBinOp AExpr AExpr
+-- 
+-- BBinOp = And | Or
+-- 
+-- RBinOp = Greater | Less
+
+-- 0 is true
+-- Store binary stuff in R2
+
+generateBBinOp (And) = return "ANL"
+generateBBinOp (Or)  = return "ORL"
+
+generateB (BoolConst b) = return $ if b then "MOV R2, #0"
+                                   else "MOV R2, #1"
+generateB (Not b) = do
+  t1 <- generateB b
+  return $ unlines $ [t1 -- Store in R2
+                     ,"MOV A, R2"
+                     ,"XRL A #1" -- Make false
+                     ,"MOV R2, A"] -- Result in R2
+
+generateB (BBinary binop expr1 expr2) = do
+  t1 <- generateB expr1 
+  t2 <- generateB expr2
+  op <- generateBBinOp binop
+  return $ unlines $ [t1
+                     ,"MOV A, R2" -- Store t1 in A
+                     ,t2 -- t2 is in R2
+                     ,op ++ "A, R2"
+                     ,"MOV R2, A"] -- Result in R2
+
+
+generateB (RBinary Greater expr1 expr2) = do
+  t1 <- generateA expr1
+  t2 <- generateA expr2
+  return $ unlines ["SETB C 0"
+                   ,t1 
+                   ,"MOV A, R0" -- t1 in A
+                   ,t2 -- t2 in R0
+                   ,"SUBB A, R0" -- Set c1 if t2>t1
+                   ,"MOV R2, C"] -- Save result in R0
+
+generateB (RBinary Less expr1 expr2) = do
+  t1 <- generateA expr1
+  t2 <- generateA expr2
+  return $ unlines ["SETB C 0"
+                   ,t2 
+                   ,"MOV A, R0" -- t2 in A
+                   ,t1 -- t1 in R0
+                   ,"SUBB A, R0" -- Set c1 if t1>t2
+                   ,"MOV R2, C"] -- Save result in R0
+
+
 -- Stmt = Seq [Stmt]
 --           | Assign String AExpr
 --           | If BExpr Stmt Stmt
 --           | While BExpr Stmt
 --           | Skip
-generate :: Stmt -> S.State (M.Map String Int) String
+generate :: Stmt -> S.State StateData String
 generate (Seq stmts) = unlines <$> mapM generate stmts
 generate Skip = return $ "NOP"
 generate e@(Assign str expr) = do
@@ -258,10 +328,44 @@ generate e@(Assign str expr) = do
                    ,"MOV @R1, R0"]
 generate (Declare str expr) = generate (Assign str expr) -- same as above for now
 
+
+
+-- If BExpr Stmt Stmt
+generate e@(If bexpr stmt1 stmt2) = do
+  b <- generateB bexpr
+  s1 <- generate stmt1 -- True
+  s2 <- generate stmt2 -- False
+  ind <- getBranchId
+  return $ unlines [";; " ++ show e
+                   ,b -- Store in R2, 0 if true
+                   ,"MOVE A, R2"
+                   ,"JNZ FALSE" ++ show ind  -- goto false if b not true
+                   ,"TRUE" ++ show ind ++ ": "
+                   ,s1 -- True code
+                   ,"SJMP ENDB" ++ show ind -- dont do false as well, jump to end
+                   ,"FALSE" ++ show ind ++ ": "
+                   ,s2
+                   ,"ENDB" ++ show ind ++ ": "]
+
+generate e@(While bexpr stmt) = do
+  b <- generateB bexpr
+  s <- generate stmt -- True
+  ind <- getBranchId
+  return $ unlines [";; " ++ show e
+                   ,"WHILE" ++ show ind ++ ": "
+                   ,b -- Store in R2, 0 if true
+                   ,"MOVE A, R2"
+                   ,"JNZ ENDB" ++ show ind  -- goto false if b not true
+                   ,s -- True code
+                   ,"SJMP WHILE" ++ show ind -- dont do false as well, jump to end
+                   ,"ENDB" ++ show ind ++ ": "]
+
+
+
 generate other = return $ show other
 
 
-generateMain ast = S.evalState (generate ast) $ M.empty
+generateMain ast = S.evalState (generate ast) $ StateData (M.empty, 0)
 
 
 
