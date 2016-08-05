@@ -163,7 +163,26 @@ generate e@(While bexpr stmt) = do
                    ,"ENDB" ++ show ind ++ ": "]
 
 
+generate e@(Write var reg) = do
+  let port = regToPortName reg  
+  reg <- lookupReg var
+  return $ unlines [";;" ++ show e
+                   ,"MOV R1, #" ++ show reg
+                   ,"MOV " ++ port ++ ", " ++ "@R1"]
 
-generate other = error "Not yet implemented"
+generate e@(Read var reg) = do
+  let port = regToPortName reg  
+  reg <- lookupReg var
+  return $ unlines [";;" ++ show e
+                   ,"MOV R1, " ++ port
+                   ,"MOV R0, #" ++ show reg
+                   ,"MOV @R0, R1"]
+
+
+generate _ = error "Not yet implemented"
+
+regToPortName :: Register -> Code
+regToPortName (Port1) = "P1"
+
 
 generateMain ast = S.evalState (generate ast) $ StateData (M.empty, 0)
