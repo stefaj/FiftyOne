@@ -59,6 +59,8 @@ data ABinOp = Add
             | Multiply
             | Divide
 
+data Register = Port1
+
 instance Show ABinOp where
   show Add = "+"
   show Subtract = "-"
@@ -68,7 +70,8 @@ instance Show ABinOp where
 -- Statements
 data Stmt = Seq [Stmt]
           | Assign String AExpr
-          | Declare String AExpr
+          | String << Register
+          | Register >> String
           | If BExpr Stmt Stmt
           | While BExpr Stmt
           | Skip
@@ -129,7 +132,7 @@ stmt :: Parser Stmt
 stmt = parens stmt <|> stmtSeq
 
 stmt' :: Parser Stmt
-stmt' = ifStmt <|> whileStmt <|> skipStmt <|> declareStmt <|> assignStmt
+stmt' = ifStmt <|> whileStmt <|> skipStmt <|> assignStmt <|> readStmt <|> writeStmt
 
 stmtSeq :: Parser Stmt
 stmtSeq = f <$> sepBy1 stmt' semi
@@ -163,6 +166,27 @@ assignStmt = do
   expr <- aExpr
   return $ Assign var expr
 
+-- <<
+
+parsePort :: Parser Stmt
+parsePort = do
+  rword "port1"
+  return $ Port1
+
+writeStmt :: Parser Stmt
+writeStmt = do
+  var <- identifier
+  void $ symbol "<<"
+  reg <- parsePort
+  return $ var << reg
+
+readStmt :: Parser Stmt
+readStmt = do
+  reg <- parsePort
+  void $ symbol ">>"
+  var <- identifier
+  return $ var >> reg
+
 declareStmt :: Parser Stmt
 declareStmt = do
   rword "var"
@@ -170,8 +194,6 @@ declareStmt = do
   void $ symbol "<-"
   expr <- aExpr
   return $ Declare var expr
-
-
 
 skipStmt :: Parser Stmt
 skipStmt = Skip <$ rword "skip"
@@ -385,8 +407,6 @@ generate other = error "Not yet implemented"
 
 
 generateMain ast = S.evalState (generate ast) $ StateData (M.empty, 0)
-
-
 
 main = do
   f <- getContents
