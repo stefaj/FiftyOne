@@ -18,7 +18,8 @@ cabal-version:       >=1.10
 
 executable FiftyOne
   main-is:             Main.hs
-  -- other-modules:       
+  other-modules:       Parser,
+                       CodeGen
   -- other-extensions:    
   build-depends:       base >=4.9 && <4.10
                        , megaparsec
